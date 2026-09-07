@@ -44,6 +44,8 @@ struct UnistylesRegistry: public StyleSheetRegistry {
     void unlinkShadowNodeWithUnistyles(const ShadowNodeFamily*);
     void suspendShadowNode(const ShadowNodeFamily*);
     bool isSuspended(const ShadowNodeFamily*) const noexcept;
+    void trackFamilyLiveness(const ShadowNodeFamily* family, std::weak_ptr<const ShadowNodeFamily> weakFamily);
+    bool isFamilyAlive(const ShadowNodeFamily* family) const;
     std::shared_ptr<core::StyleSheet> addStyleSheet(jsi::Runtime& rt, core::StyleSheetType type, jsi::Object&& rawValue);
     DependencyMap buildDependencyMap(std::vector<UnistyleDependency>& deps);
     void shadowLeafUpdateFromUnistyle(jsi::Runtime& rt, Unistyle::Shared unistyle, jsi::Value& maybePressableId);
@@ -63,6 +65,7 @@ private:
     std::unordered_map<int, std::shared_ptr<core::StyleSheet>> _styleSheetRegistry{};
     std::unordered_map<const ShadowNodeFamily*, std::vector<std::shared_ptr<UnistyleData>>> _shadowRegistry{};
     std::unordered_set<const ShadowNodeFamily*> _suspendedFamilies{};
+    std::unordered_map<const ShadowNodeFamily*, std::weak_ptr<const ShadowNodeFamily>> _familyLiveness{};
 };
 
 inline UnistylesRegistry& UnistylesRegistry::get() {

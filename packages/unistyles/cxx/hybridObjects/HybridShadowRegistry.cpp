@@ -108,6 +108,11 @@ jsi::Value HybridShadowRegistry::link(jsi::Runtime &rt, const jsi::Value &thisVa
         std::move(initialScopedUpdate)
     );
 
+    registry.trackFamilyLiveness(
+        &shadowNodeWrapper->getFamily(),
+        std::weak_ptr<const ShadowNodeFamily>(shadowNodeWrapper->getFamilyShared())
+    );
+
     if (wasSuspended) {
         shadow::ShadowTreeManager::updateShadowTree(rt);
     }

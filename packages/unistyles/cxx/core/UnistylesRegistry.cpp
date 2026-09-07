@@ -114,8 +114,25 @@ void core::UnistylesRegistry::unlinkShadowNodeWithUnistyles(const ShadowNodeFami
     this->trafficController.withLock([this, shadowNodeFamily](){
         this->_shadowRegistry.erase(shadowNodeFamily);
         this->_suspendedFamilies.erase(shadowNodeFamily);
+        this->_familyLiveness.erase(shadowNodeFamily);
         this->trafficController.removeShadowNode(shadowNodeFamily);
     });
+}
+
+void core::UnistylesRegistry::trackFamilyLiveness(const ShadowNodeFamily* family, std::weak_ptr<const ShadowNodeFamily> weakFamily) {
+    this->trafficController.withLock([this, family, weakFamily](){
+        this->_familyLiveness[family] = weakFamily;
+    });
+}
+
+bool core::UnistylesRegistry::isFamilyAlive(const ShadowNodeFamily* family) const {
+    auto it = this->_familyLiveness.find(family);
+
+    if (it == this->_familyLiveness.end()) {
+        return true;
+    }
+
+    return !it->second.expired();
 }
 
 void core::UnistylesRegistry::suspendShadowNode(const ShadowNodeFamily* shadowNodeFamily) {
@@ -145,6 +162,10 @@ core::DependencyMap core::UnistylesRegistry::buildDependencyMap(std::vector<Unis
     std::unordered_set<UnistyleDependency> uniqueDependencies(deps.begin(), deps.end());
 
     for (const auto& [family, unistyles] : this->_shadowRegistry) {
+        if (!this->isFamilyAlive(family)) {
+            continue;
+        }
+
         bool hasAnyOfDependencies = false;
 
         // Check if any dependency matches
