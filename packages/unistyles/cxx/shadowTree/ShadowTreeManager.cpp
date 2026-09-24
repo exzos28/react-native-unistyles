@@ -10,6 +10,9 @@ void shadow::ShadowTreeManager::updateShadowTree(jsi::Runtime& rt) {
     auto& registry = core::UnistylesRegistry::get();
 
     registry.trafficController.withLock([&](){
+        // pending updates are keyed by raw family pointers and are never cleared, so drop destroyed
+        // families and keep the live ones alive until the update below is done with them
+        auto liveFamilies = registry.retainLiveFamiliesUnsafe();
         auto updates = registry.trafficController.getUpdates();
 
         if (updates.empty()) {

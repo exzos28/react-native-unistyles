@@ -11,6 +11,14 @@ jsi::Value HybridShadowRegistry::link(jsi::Runtime &rt, const jsi::Value &thisVa
     std::vector<core::Unistyle::Shared> unistyleWrappers = core::unistyleFromValue(rt, args[1]);
     std::vector<std::vector<folly::dynamic>> arguments;
     auto& registry = core::UnistylesRegistry::get();
+
+    // before anything reads the registry by this family's address: drops leftovers of a destroyed
+    // family that had the same address (unmounted while frozen, so it was never unlinked)
+    registry.trackFamilyLiveness(
+        &shadowNodeWrapper->getFamily(),
+        std::weak_ptr<const ShadowNodeFamily>(shadowNodeWrapper->getFamilyShared())
+    );
+
     const bool wasSuspended = registry.isSuspended(&shadowNodeWrapper->getFamily());
 
     // this is special case for Animated, and prevents appending same unistyles to node
@@ -106,11 +114,6 @@ jsi::Value HybridShadowRegistry::link(jsi::Runtime &rt, const jsi::Value &thisVa
         &shadowNodeWrapper->getFamily(),
         unistylesData,
         std::move(initialScopedUpdate)
-    );
-
-    registry.trackFamilyLiveness(
-        &shadowNodeWrapper->getFamily(),
-        std::weak_ptr<const ShadowNodeFamily>(shadowNodeWrapper->getFamilyShared())
     );
 
     if (wasSuspended) {

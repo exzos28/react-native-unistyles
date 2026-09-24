@@ -45,7 +45,8 @@ struct UnistylesRegistry: public StyleSheetRegistry {
     void suspendShadowNode(const ShadowNodeFamily*);
     bool isSuspended(const ShadowNodeFamily*) const noexcept;
     void trackFamilyLiveness(const ShadowNodeFamily* family, std::weak_ptr<const ShadowNodeFamily> weakFamily);
-    bool isFamilyAlive(const ShadowNodeFamily* family) const;
+    // call it only within trafficController.withLock!
+    std::vector<std::shared_ptr<const ShadowNodeFamily>> retainLiveFamiliesUnsafe();
     std::shared_ptr<core::StyleSheet> addStyleSheet(jsi::Runtime& rt, core::StyleSheetType type, jsi::Object&& rawValue);
     DependencyMap buildDependencyMap(std::vector<UnistyleDependency>& deps);
     void shadowLeafUpdateFromUnistyle(jsi::Runtime& rt, Unistyle::Shared unistyle, jsi::Value& maybePressableId);
@@ -58,6 +59,9 @@ struct UnistylesRegistry: public StyleSheetRegistry {
 
 private:
     UnistylesRegistry() = default;
+
+    // call it only within trafficController.withLock!
+    void forgetFamilyUnsafe(const ShadowNodeFamily* family);
 
     static std::atomic<int> _nextStyleSheetTag;
     std::optional<std::string> _scopedTheme{};

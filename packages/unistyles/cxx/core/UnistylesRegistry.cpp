@@ -112,27 +112,56 @@ void core::UnistylesRegistry::removeDuplicatedUnistyles(const ShadowNodeFamily *
 
 void core::UnistylesRegistry::unlinkShadowNodeWithUnistyles(const ShadowNodeFamily* shadowNodeFamily) {
     this->trafficController.withLock([this, shadowNodeFamily](){
-        this->_shadowRegistry.erase(shadowNodeFamily);
-        this->_suspendedFamilies.erase(shadowNodeFamily);
-        this->_familyLiveness.erase(shadowNodeFamily);
-        this->trafficController.removeShadowNode(shadowNodeFamily);
+        this->forgetFamilyUnsafe(shadowNodeFamily);
     });
 }
 
+void core::UnistylesRegistry::forgetFamilyUnsafe(const ShadowNodeFamily* family) {
+    this->_shadowRegistry.erase(family);
+    this->_suspendedFamilies.erase(family);
+    this->_familyLiveness.erase(family);
+    this->trafficController.removeShadowNode(family);
+}
+
+// Must be called before the registry is read or written for this family: if a destroyed family (e.g.
+// one unmounted while frozen, so it never got unlinked) left its entries at the same address, they
+// would otherwise be treated as the new family's data.
 void core::UnistylesRegistry::trackFamilyLiveness(const ShadowNodeFamily* family, std::weak_ptr<const ShadowNodeFamily> weakFamily) {
-    this->trafficController.withLock([this, family, weakFamily](){
-        this->_familyLiveness[family] = weakFamily;
+    this->trafficController.withLock([this, family, &weakFamily](){
+        auto it = this->_familyLiveness.find(family);
+
+        if (it != this->_familyLiveness.end() && it->second.expired()) {
+            this->forgetFamilyUnsafe(family);
+        }
+
+        this->_familyLiveness[family] = std::move(weakFamily);
     });
 }
 
-bool core::UnistylesRegistry::isFamilyAlive(const ShadowNodeFamily* family) const {
-    auto it = this->_familyLiveness.find(family);
+// Families are keyed by raw pointers, and a family unlinked by nobody (unmounted while frozen)
+// can be destroyed at any time, on any thread. Drops every destroyed family and returns strong
+// references to the live ones, so they can't be destroyed while their raw pointers are in use.
+std::vector<std::shared_ptr<const ShadowNodeFamily>> core::UnistylesRegistry::retainLiveFamiliesUnsafe() {
+    std::vector<std::shared_ptr<const ShadowNodeFamily>> liveFamilies;
+    std::vector<const ShadowNodeFamily*> destroyedFamilies;
 
-    if (it == this->_familyLiveness.end()) {
-        return true;
+    liveFamilies.reserve(this->_familyLiveness.size());
+
+    for (const auto& [family, weakFamily] : this->_familyLiveness) {
+        if (auto liveFamily = weakFamily.lock()) {
+            liveFamilies.emplace_back(std::move(liveFamily));
+
+            continue;
+        }
+
+        destroyedFamilies.emplace_back(family);
     }
 
-    return !it->second.expired();
+    for (const auto* family : destroyedFamilies) {
+        this->forgetFamilyUnsafe(family);
+    }
+
+    return liveFamilies;
 }
 
 void core::UnistylesRegistry::suspendShadowNode(const ShadowNodeFamily* shadowNodeFamily) {
@@ -161,37 +190,38 @@ core::DependencyMap core::UnistylesRegistry::buildDependencyMap(std::vector<Unis
 
     std::unordered_set<UnistyleDependency> uniqueDependencies(deps.begin(), deps.end());
 
-    for (const auto& [family, unistyles] : this->_shadowRegistry) {
-        if (!this->isFamilyAlive(family)) {
-            continue;
-        }
+    this->trafficController.withLock([this, &dependencyMap, &uniqueDependencies](){
+        // drop destroyed families so they never reach the dependency map
+        this->retainLiveFamiliesUnsafe();
 
-        bool hasAnyOfDependencies = false;
+        for (const auto& [family, unistyles] : this->_shadowRegistry) {
+            bool hasAnyOfDependencies = false;
 
-        // Check if any dependency matches
-        for (const auto& unistyleData : unistyles) {
-            for (const auto& dep : unistyleData->unistyle->dependencies) {
-                if (uniqueDependencies.count(dep)) {
-                    hasAnyOfDependencies = true;
-                    break;
+            // Check if any dependency matches
+            for (const auto& unistyleData : unistyles) {
+                for (const auto& dep : unistyleData->unistyle->dependencies) {
+                    if (uniqueDependencies.count(dep)) {
+                        hasAnyOfDependencies = true;
+                        break;
+                    }
                 }
+
+                if (hasAnyOfDependencies) {
+                    break;
+                };
             }
 
-            if (hasAnyOfDependencies) {
-                break;
-            };
-        }
+            if (!hasAnyOfDependencies) {
+                continue;
+            }
 
-        if (!hasAnyOfDependencies) {
-            continue;
+            dependencyMap[family].insert(
+                dependencyMap[family].end(),
+                unistyles.begin(),
+                unistyles.end()
+            );
         }
-
-        dependencyMap[family].insert(
-            dependencyMap[family].end(),
-            unistyles.begin(),
-            unistyles.end()
-        );
-    }
+    });
 
     return dependencyMap;
 }
@@ -288,6 +318,7 @@ void core::UnistylesRegistry::destroy() {
     this->_styleSheetRegistry.clear();
     this->_shadowRegistry.clear();
     this->_suspendedFamilies.clear();
+    this->_familyLiveness.clear();
     this->_scopedTheme = std::nullopt;
     _nextStyleSheetTag.store(0);
 }
