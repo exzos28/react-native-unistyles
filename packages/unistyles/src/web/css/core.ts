@@ -22,6 +22,11 @@ const setStyle = (state: CSSState, props: SetStyleProps) => {
 
     const childClassNames = getPointerEventsChildClassNames(props.className)
 
+    // the same hash can be re-applied with a new value (e.g. a theme or breakpoint dependency),
+    // so drop child rules generated for the previous value
+    state.unset({ ...props, className: childClassNames.boxNone })
+    state.unset({ ...props, className: childClassNames.boxOnly })
+
     switch (props.value) {
         case 'box-none':
             state.set({ ...props, value: 'none!important' })

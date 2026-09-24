@@ -49,4 +49,25 @@ describe('Web pointerEvents', () => {
 
         expect(state.getStyles()).toBe('')
     })
+
+    it('drops the previous child rule when the same style gets a new value', () => {
+        const state = createState()
+
+        convertToCSS('hash', { pointerEvents: 'box-none' }, state)
+        convertToCSS('hash', { pointerEvents: 'none' }, state)
+
+        expect(state.getStyles()).toBe('.hash{pointer-events:none!important;}')
+    })
+
+    it('removes pseudo-class rules and their child rules together with the style', () => {
+        const state = createState()
+
+        convertToCSS('hash', { _hover: { pointerEvents: 'box-none' } }, state)
+
+        expect(state.getStyles()).toBe('.hash:hover{pointer-events:none!important;}.hash:hover *{pointer-events:auto;}')
+
+        state.remove('hash')
+
+        expect(state.getStyles()).toBe('')
+    })
 })
