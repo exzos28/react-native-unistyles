@@ -3,7 +3,7 @@ import type { UnistylesServices } from '../types'
 
 import { convertUnistyles } from '../convert'
 import { hyphenate, isServer } from '../utils'
-import { convertToCSS } from './core'
+import { convertToCSS, getPointerEventsChildClassNames } from './core'
 
 type MapType = Map<string, Map<string, Map<string, any>>>
 type SetProps = {
@@ -97,12 +97,15 @@ export class CSSState {
     }
 
     remove = (hash: string) => {
-        this.mainMap.forEach((styles) => {
+        const { boxNone, boxOnly } = getPointerEventsChildClassNames(hash)
+        const deleteHash = (styles: Map<string, Map<string, any>>) => {
             styles.delete(hash)
-        })
-        this.mqMap.forEach((styles) => {
-            styles.delete(hash)
-        })
+            styles.delete(boxNone)
+            styles.delete(boxOnly)
+        }
+
+        this.mainMap.forEach(deleteHash)
+        this.mqMap.forEach(deleteHash)
         this.recreate()
     }
 
