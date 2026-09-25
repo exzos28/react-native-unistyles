@@ -14,10 +14,13 @@ jsi::Value HybridShadowRegistry::link(jsi::Runtime &rt, const jsi::Value &thisVa
 
     // before anything reads the registry by this family's address: drops leftovers of a destroyed
     // family that had the same address (unmounted while frozen, so it was never unlinked)
+    // ShadowNode::getFamilyShared() exists since RN 0.81; older versions keep the untracked behavior
+#if REACT_NATIVE_VERSION_MINOR >= 81
     registry.trackFamilyLiveness(
         &shadowNodeWrapper->getFamily(),
         std::weak_ptr<const ShadowNodeFamily>(shadowNodeWrapper->getFamilyShared())
     );
+#endif
 
     const bool wasSuspended = registry.isSuspended(&shadowNodeWrapper->getFamily());
 
